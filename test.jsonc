@@ -15,7 +15,7 @@
       "cache"    // 缓存功能
     ]
   },
-  // 数据库配置
+  // 数据库配置1
   "database": {
     "type": "mysql",
     "connection": {
