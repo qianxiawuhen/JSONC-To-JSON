@@ -1,0 +1,26 @@
+{
+  // 这是一个示例 JSONC 配置文件
+  "name": "test-app",
+  "version": "1.0.0",
+  /* 
+   * 应用程序配置
+   */
+  "config": {
+    "host": "localhost", // 服务器地址
+    "port": 8080,        // 端口号
+    "debug": true,       // 是否开启调试模式
+    "features": [
+      "auth",    // 认证功能
+      "logging", // 日志功能
+      "cache"    // 缓存功能
+    ]
+  },
+  // 数据库配置
+  "database": {
+    "type": "mysql",
+    "connection": {
+      "host": "127.0.0.1",
+      "port": 3306
+    }
+  }
+}

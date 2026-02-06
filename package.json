@@ -1,0 +1,34 @@
+{
+  "name": "jsonc-to-json",
+  "version": "1.0.0",
+  "description": "A command-line tool to convert JSONC files to JSON format",
+  "main": "index.js",
+  "bin": {
+    "jsonc-to-json": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "build": "pkg . --target node16-win-x64 --output dist/jsonc-to-json.exe"
+  },
+  "keywords": [
+    "jsonc",
+    "json",
+    "converter",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "jsonc-parser": "^3.2.0"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "targets": [
+      "node16-linux-x64",
+      "node16-win-x64"
+    ],
+    "outputPath": "dist"
+  }
+}
