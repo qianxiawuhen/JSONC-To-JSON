@@ -11,6 +11,9 @@ jobs:
     if: contains(github.event.head_commit.message, '[build]')
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write  # 需要写权限才能创建release
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,7 +30,67 @@ jobs:
       - name: Build executables
         run: npm run build
       
-      - name: Upload build artifacts
+      - name: Get version from package.json
+        id: package_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Check if version changed
+        id: check_version
+        run: |
+          CURRENT_VERSION="${{ steps.package_version.outputs.tag }}"
+          
+          # 获取最新的release标签
+          LATEST_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No previous release found, will create new release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          elif [ "$LATEST_TAG" != "$CURRENT_VERSION" ]; then
+            echo "Version changed: $LATEST_TAG -> $CURRENT_VERSION"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version unchanged: $CURRENT_VERSION"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create Release
+        if: steps.check_version.outputs.should_release == 'true'
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.package_version.outputs.tag }}
+          name: Release ${{ steps.package_version.outputs.version }}
+          body: |
+            ## 版本 ${{ steps.package_version.outputs.version }}
+            
+            **提交**: ${{ github.sha }}
+            **提交信息**: ${{ github.event.head_commit.message }}
+            **构建时间**: ${{ github.event.head_commit.timestamp }}
+            
+            ### 构建产物
+            - `jsonc-to-json-linux`: Linux x64 可执行文件
+            - `jsonc-to-json.exe`: Windows x64 可执行文件
+          files: |
+            dist/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Release status
+        run: |
+          if [ "${{ steps.check_version.outputs.should_release }}" == "true" ]; then
+            echo "✅ 新版本已发布到 Release: ${{ steps.package_version.outputs.tag }}"
+          else
+            echo "ℹ️ 版本号未变更，跳过发布。构建产物已上传至 Artifacts"
+          fi
+      
+      - name: Upload build artifacts (backup)
         uses: actions/upload-artifact@v4
         with:
           name: jsonc-to-json-builds
