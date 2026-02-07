@@ -73,7 +73,6 @@ jobs:
             **构建时间**: ${{ github.event.head_commit.timestamp }}
             
             ### 构建产物
-            - `jsonc-to-json-linux`: Linux x64 可执行文件
             - `jsonc-to-json.exe`: Windows x64 可执行文件
           files: |
             dist/*
