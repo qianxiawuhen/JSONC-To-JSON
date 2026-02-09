@@ -5,7 +5,7 @@
 ## 命令格式
 
 ```bash
-jsonc-to-json.exe 源文件路径 -o 输出文件路径 -e utf8 -l lf
+jsonc-to-json.exe 源文件路径 -o 输出文件路径 -ie auto -oe utf8 -l lf
 ```
 
 ### 参数说明
@@ -18,7 +18,11 @@ jsonc-to-json.exe 源文件路径 -o 输出文件路径 -e utf8 -l lf
   - 指定输出 JSON 文件的路径
   - 如果不指定，自动在源文件同目录生成同名 `.json` 文件
 
-- `-e, --encoding 编码`（可选）
+- `-ie, --input-encoding 编码`（可选）
+  - 指定输入文件的编码格式（默认：`auto`，自动检测 UTF-8/UTF-16/UTF-32 BOM，未检测到则按 `utf8`）
+  - 支持：`auto` 或任意 iconv-lite 支持的编码（常见：`utf8`, `utf16le`, `utf16be`, `utf32le`, `utf32be`, `ascii`, `latin1`, `gbk`, `gb2312`, `cp936`）
+
+- `-oe, --output-encoding 编码`（可选）
   - 指定输出文件的编码格式（默认：`utf8`）
   - 支持的编码：`utf8`, `utf16le`, `ascii`, `latin1`
 

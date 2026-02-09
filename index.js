@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const jsonc = require('jsonc-parser');
+const iconv = require('iconv-lite');
 
 // 获取exe所在目录（打包后）或脚本所在目录（开发时）
 function getExeDirectory() {
@@ -27,12 +28,14 @@ JSONC to JSON Converter
   jsonc-to-json <input.jsonc> [options]
 
 选项:
-  -o, --output <file>      指定输出文件路径（如不指定，则在源文件同目录下生成同名JSON文件）
-  -e, --encoding <type>    指定输出文件编码 (默认: utf8)
-                           支持: utf8, utf16le, ascii, latin1
-  -l, --line-ending <type> 指定输出文件换行符 (默认: 系统默认)
-                           支持: lf (\\n), crlf (\\r\\n), cr (\\r)
-  -h, --help               显示帮助信息
+  -o, --output <file>         指定输出文件路径（如不指定，则在源文件同目录下生成同名JSON文件）
+  -ie, --input-encoding <type> 指定输入文件编码 (默认: auto 自动检测 UTF-8/UTF-16/UTF-32 BOM，未检测到则按 utf8)
+                               支持: auto 或任意 iconv-lite 支持的编码（常见: utf8, utf16le, utf16be, utf32le, utf32be, ascii, latin1, gbk, gb2312, cp936）
+  -oe, --output-encoding <type> 指定输出文件编码 (默认: utf8)
+                                支持: utf8, utf16le, ascii, latin1
+  -l, --line-ending <type>    指定输出文件换行符 (默认: 系统默认)
+                              支持: lf (\\n), crlf (\\r\\n), cr (\\r)
+  -h, --help                  显示帮助信息
 
 路径说明:
   - 支持绝对路径和相对路径
@@ -45,9 +48,9 @@ JSONC to JSON Converter
   jsonc-to-json C:\\data\\config.jsonc                         # 绝对路径
   jsonc-to-json input.jsonc -o output.json                     # 指定输出文件
   jsonc-to-json input.jsonc --output ./out/data.json           # 指定输出到子目录
-  jsonc-to-json input.jsonc -e utf16le                         # 使用 UTF-16LE 编码输出
+  jsonc-to-json input.jsonc -oe utf16le                        # 使用 UTF-16LE 编码输出
   jsonc-to-json input.jsonc -l crlf                            # 使用 Windows 风格换行符
-  jsonc-to-json input.jsonc -o out.json -e utf8 -l lf          # 组合使用多个选项
+  jsonc-to-json input.jsonc -o out.json -oe utf8 -l lf         # 组合使用多个选项
 `);
 }
 
@@ -60,6 +63,7 @@ function parseArgs(args) {
 
     const inputFile = args[0];
     let outputFile = null;
+    let inputEncoding = 'auto';
     let encoding = 'utf8';
     let lineEnding = null; // null 表示使用系统默认
 
@@ -69,8 +73,14 @@ function parseArgs(args) {
         outputFile = args[outputIndex + 1];
     }
 
-    // 查找 -e 或 --encoding 参数
-    const encodingIndex = args.findIndex(arg => arg === '-e' || arg === '--encoding');
+    // 查找 -ie 或 --input-encoding 参数
+    const inputEncodingIndex = args.findIndex(arg => arg === '-ie' || arg === '--input-encoding');
+    if (inputEncodingIndex !== -1 && args[inputEncodingIndex + 1]) {
+        inputEncoding = normalizeEncoding(args[inputEncodingIndex + 1]);
+    }
+
+    // 查找 -oe 或 --output-encoding 参数
+    const encodingIndex = args.findIndex(arg => arg === '-oe' || arg === '--output-encoding');
     if (encodingIndex !== -1 && args[encodingIndex + 1]) {
         const encValue = args[encodingIndex + 1].toLowerCase();
         if (['utf8', 'utf-8', 'utf16le', 'utf-16le', 'ascii', 'latin1'].includes(encValue)) {
@@ -96,7 +106,7 @@ function parseArgs(args) {
         }
     }
 
-    return { inputFile, outputFile, encoding, lineEnding };
+    return { inputFile, outputFile, inputEncoding, encoding, lineEnding };
 }
 
 // 解析并验证输入文件路径
@@ -160,6 +170,65 @@ function resolveOutputPath(outputPath, inputPath) {
     return absolutePath;
 }
 
+function normalizeEncoding(encoding) {
+    if (!encoding) {
+        return null;
+    }
+    const value = encoding.toLowerCase();
+    if (value === 'utf-8') return 'utf8';
+    if (value === 'utf-16le') return 'utf16le';
+    if (value === 'utf-16be') return 'utf16be';
+    if (value === 'utf-32le') return 'utf32le';
+    if (value === 'utf-32be') return 'utf32be';
+    return value;
+}
+
+function detectEncodingFromBom(buffer) {
+    if (buffer.length >= 4 &&
+        buffer[0] === 0xFF && buffer[1] === 0xFE && buffer[2] === 0x00 && buffer[3] === 0x00) {
+        return { encoding: 'utf32le', offset: 4 };
+    }
+    if (buffer.length >= 4 &&
+        buffer[0] === 0x00 && buffer[1] === 0x00 && buffer[2] === 0xFE && buffer[3] === 0xFF) {
+        return { encoding: 'utf32be', offset: 4 };
+    }
+    if (buffer.length >= 3 &&
+        buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+        return { encoding: 'utf8', offset: 3 };
+    }
+    if (buffer.length >= 2 &&
+        buffer[0] === 0xFF && buffer[1] === 0xFE) {
+        return { encoding: 'utf16le', offset: 2 };
+    }
+    if (buffer.length >= 2 &&
+        buffer[0] === 0xFE && buffer[1] === 0xFF) {
+        return { encoding: 'utf16be', offset: 2 };
+    }
+    return null;
+}
+
+function decodeInputBuffer(buffer, inputEncoding) {
+    const normalized = normalizeEncoding(inputEncoding);
+    if (normalized && normalized !== 'auto') {
+        if (!iconv.encodingExists(normalized)) {
+            throw new Error(`当前环境不支持的输入编码类型 "${inputEncoding}"`);
+        }
+        const text = iconv.decode(buffer, normalized);
+        return text.replace(/^\uFEFF/, '');
+    }
+
+    const bomInfo = detectEncodingFromBom(buffer);
+    if (bomInfo) {
+        if (!iconv.encodingExists(bomInfo.encoding)) {
+            throw new Error(`当前环境不支持的输入编码类型 "${bomInfo.encoding}"`);
+        }
+        const text = iconv.decode(buffer.slice(bomInfo.offset), bomInfo.encoding);
+        return text.replace(/^\uFEFF/, '');
+    }
+
+    return iconv.decode(buffer, 'utf8').replace(/^\uFEFF/, '');
+}
+
 // 转换换行符
 function convertLineEnding(content, lineEnding) {
     if (!lineEnding) {
@@ -184,7 +253,7 @@ function convertLineEnding(content, lineEnding) {
 // 主函数
 function main() {
     const args = process.argv.slice(2);
-    const { inputFile, outputFile, encoding, lineEnding } = parseArgs(args);
+    const { inputFile, outputFile, inputEncoding, encoding, lineEnding } = parseArgs(args);
 
     try {
         // 解析并验证输入文件路径
@@ -194,7 +263,8 @@ function main() {
         const resolvedOutputPath = resolveOutputPath(outputFile, resolvedInputPath);
 
         // 读取 JSONC 文件
-        const jsoncContent = fs.readFileSync(resolvedInputPath, 'utf8');
+        const inputBuffer = fs.readFileSync(resolvedInputPath);
+        const jsoncContent = decodeInputBuffer(inputBuffer, inputEncoding);
         
         // 解析 JSONC 并转换为 JSON
         const errors = [];
